@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"reflect"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -39,9 +40,9 @@ func connect() (driver.Conn, error) {
 
 		TLS: &tls.Config{InsecureSkipVerify: true},
 
-		Debug: true,
+		Debug: false,
 
-		Debugf: func(format string, v ...interface{}) {
+		Debugf: func(format string, v ...any) {
 			slog.Info("clickhouse-go", "msg", fmt.Sprintf(format, v...))
 		},
 	})
@@ -63,28 +64,67 @@ func connect() (driver.Conn, error) {
 	return conn, nil
 }
 
+func query(conn driver.Conn, query string) {
+	ctx := context.Background()
+	rows, err := conn.Query(ctx, query)
+	if err != nil {
+		Fatal(err)
+	}
+
+	defer rows.Close()
+
+	var objects []map[string]any
+
+	for rows.Next() {
+		// FIXME: try and do this reflection stuff outside the loop
+
+		columns := rows.ColumnTypes()
+
+		values := make([]any, len(columns))
+		object := map[string]any{}
+
+		for i, column := range columns {
+			object[column.Name()] = reflect.New(column.ScanType()).Interface()
+			values[i] = object[column.Name()]
+		}
+
+		if err = rows.Scan(values...); err != nil {
+			slog.Error("Scanning rows", "error", err)
+			return
+		}
+
+		objects = append(objects, object)
+	}
+
+	for _, v := range objects {
+		values := []slog.Attr{}
+		for k, v := range v {
+			concreteValue := reflect.ValueOf(v).Elem()
+			values = append(values, slog.Any(k, concreteValue))
+		}
+		slog.LogAttrs(
+			context.Background(),
+			slog.LevelInfo,
+			"Rule found",
+			values...,
+		)
+	}
+}
+
 func main() {
 	conn, err := connect()
 	if err != nil {
 		panic((err))
 	}
 
-	ctx := context.Background()
-	rows, err := conn.Query(ctx, "SELECT name,toString(uuid) as uuid_str FROM system.tables LIMIT 5")
-	if err != nil {
-		Fatal(err)
-	}
-
-	for rows.Next() {
-		var (
-			name, uuid string
-		)
-		if err := rows.Scan(
-			&name,
-			&uuid,
-		); err != nil {
-			Fatal(err)
-		}
-		slog.Info("Row", "name", name, "uuid", uuid)
-	}
+	query(conn, `
+		SELECT
+			postcode1 as postcode,
+			count() as count,
+			round(avg(price)) AS price
+		FROM uk.uk_price_paid
+		WHERE (town = 'BRISTOL') AND (postcode1 != '') and date >= '2021-01-01'
+		GROUP BY postcode1
+		ORDER BY price DESC
+		LIMIT 3`)
 }
