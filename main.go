@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"reflect"
 
@@ -64,7 +68,7 @@ func connect() (driver.Conn, error) {
 	return conn, nil
 }
 
-func query(conn driver.Conn, query string) {
+func query(conn driver.Conn, query string) []map[string]string {
 	ctx := context.Background()
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
@@ -90,7 +94,7 @@ func query(conn driver.Conn, query string) {
 
 		if err = rows.Scan(values...); err != nil {
 			slog.Error("Scanning rows", "error", err)
-			return
+			return nil
 		}
 
 		objects = append(objects, object)
@@ -109,6 +113,67 @@ func query(conn driver.Conn, query string) {
 			values...,
 		)
 	}
+
+	labels := []map[string]string{}
+	for _, v := range objects {
+		alertLabels := map[string]string{}
+		for k, v := range v {
+			var value string
+			// TODO: support more types
+			switch v := reflect.ValueOf(v).Elem().Interface().(type) {
+			case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+				value = fmt.Sprintf("%d", v)
+			case float32, float64:
+				value = fmt.Sprintf("%f", v)
+			case string:
+				value = v
+			default:
+				slog.Warn("Unsupported type", "type", reflect.TypeOf(v))
+				value = fmt.Sprintf("%+v", v)
+			}
+
+			alertLabels[k] = value
+		}
+		labels = append(labels, alertLabels)
+	}
+
+	return labels
+}
+
+type Alert struct {
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+func alert(labels []map[string]string, annotations map[string]string) {
+	alertsEndpoint := "http://localhost:9093/api/v2/alerts"
+
+	alerts := []Alert{}
+
+	for _, l := range labels {
+		l["alertname"] = "clickhouse"
+		alerts = append(alerts, Alert{
+			Labels:      l,
+			Annotations: annotations,
+		})
+	}
+
+	request, err := json.Marshal(alerts)
+	if err != nil {
+		Fatal(err)
+	}
+	fmt.Println(string(request))
+
+	resp, err := http.Post(alertsEndpoint, "application/json", bytes.NewBuffer(request))
+	if err != nil {
+		Fatal(err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		Fatal(err)
+	}
+	slog.Info("Alert sent", "status", resp.Status, "body", string(body))
 }
 
 func main() {
@@ -117,14 +182,16 @@ func main() {
 		panic((err))
 	}
 
-	query(conn, `
+	labels := query(conn, `
 		SELECT
 			postcode1 as postcode,
 			count() as count,
-			round(avg(price)) AS price
+			cast(round(avg(price)), 'int') AS price
 		FROM uk.uk_price_paid
 		WHERE (town = 'BRISTOL') AND (postcode1 != '') and date >= '2021-01-01'
 		GROUP BY postcode1
 		ORDER BY price DESC
 		LIMIT 3`)
+
+	alert(labels, nil)
 }
