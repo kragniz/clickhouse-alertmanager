@@ -2,7 +2,10 @@ module github.com/kragniz/clickhouse-alertmanager
 
 go 1.22.5
 
-require github.com/ClickHouse/clickhouse-go/v2 v2.30.0
+require (
+	github.com/ClickHouse/clickhouse-go/v2 v2.30.0
+	github.com/goccy/go-yaml v1.14.3
+)
 
 require (
 	github.com/ClickHouse/ch-go v0.61.5 // indirect

@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"reflect"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
+	"github.com/kragniz/clickhouse-alertmanager/config"
 )
 
 func Fatal(err error) {
@@ -145,13 +148,13 @@ type Alert struct {
 	Annotations map[string]string `json:"annotations"`
 }
 
-func alert(labels []map[string]string, annotations map[string]string) {
+func alert(name string, labels []map[string]string, annotations map[string]string) {
 	alertsEndpoint := "http://localhost:9093/api/v2/alerts"
 
 	alerts := []Alert{}
 
 	for _, l := range labels {
-		l["alertname"] = "clickhouse"
+		l["alertname"] = name
 		alerts = append(alerts, Alert{
 			Labels:      l,
 			Annotations: annotations,
@@ -182,16 +185,23 @@ func main() {
 		panic((err))
 	}
 
-	labels := query(conn, `
-		SELECT
-			postcode1 as postcode,
-			count() as count,
-			cast(round(avg(price)), 'int') AS price
-		FROM uk.uk_price_paid
-		WHERE (town = 'BRISTOL') AND (postcode1 != '') and date >= '2021-01-01'
-		GROUP BY postcode1
-		ORDER BY price DESC
-		LIMIT 3`)
+	config, err := config.ReadAlertConfig("alerts.yaml")
+	if err != nil {
+		panic((err))
+	}
 
-	alert(labels, nil)
+	for _, group := range config.Groups {
+		for _, rule := range group.Rules {
+			alertLabels := []map[string]string{}
+
+			for _, queryLabels := range query(conn, rule.Expr) {
+				labels := maps.Clone(group.Labels)
+				maps.Copy(labels, rule.Labels)
+				maps.Copy(labels, queryLabels)
+				alertLabels = append(alertLabels, labels)
+			}
+
+			alert(rule.AlertName, alertLabels, rule.Annotations)
+		}
+	}
 }
