@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	Clickhouse Clickhouse `yaml:"clickhouse"`
-	RuleFiles  []string   `yaml:"rule_files"`
+	Clickhouse         Clickhouse `yaml:"clickhouse"`
+	RuleFiles          []string   `yaml:"rule_files"`
+	EvaluationInterval int        `yaml:"evaluation_interval"`
 }
 
 type Clickhouse struct {

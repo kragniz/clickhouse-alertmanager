@@ -8,3 +8,5 @@ clickhouse:
 
 rule_files:
   - alerts.yaml
+
+evaluation_interval: 30
