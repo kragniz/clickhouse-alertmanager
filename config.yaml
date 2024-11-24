@@ -5,3 +5,6 @@ clickhouse:
   database: default
   username: demo
   password: ""
+
+rule_files:
+  - alerts.yaml

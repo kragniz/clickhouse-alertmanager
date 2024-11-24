@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 
 	"github.com/goccy/go-yaml"
@@ -24,6 +25,7 @@ type Rule struct {
 }
 
 func ReadAlertConfig(filename string) (*AlertConfig, error) {
+	slog.Debug("Reading rule config", "filename", filename)
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err

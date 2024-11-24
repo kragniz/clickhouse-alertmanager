@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -74,19 +76,37 @@ func connect(conf config.Clickhouse) (driver.Conn, error) {
 }
 
 func main() {
-	conf, err := config.ReadConfig("config.yaml")
-	if err != nil {
-		Fatal(err)
+	configFile := flag.String("config.file", "config.yaml", "Config file path")
+	logLevel := flag.String("log.level", "info", "Log level (debug, info, warn, error)")
+	flag.Parse()
+
+	var level slog.Level
+	switch *logLevel {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		Fatal(fmt.Errorf("invalid log level: %s", *logLevel))
 	}
 
 	logger := slog.New(
 		slog.NewTextHandler(
 			os.Stdout,
 			&slog.HandlerOptions{
-				Level: slog.LevelDebug,
+				Level: level,
 			},
 		),
 	)
+
+	conf, err := config.ReadConfig(*configFile)
+	if err != nil {
+		Fatal(err)
+	}
 
 	slog.SetDefault(logger)
 
@@ -95,12 +115,19 @@ func main() {
 		Fatal(err)
 	}
 
-	alertconfig, err := config.ReadAlertConfig("alerts.yaml")
-	if err != nil {
-		Fatal(err)
+	scheduledRules := []rule.ScheduledRule{}
+	for _, alertConfigFile := range conf.RuleFiles {
+		alertconfig, err := config.ReadAlertConfig(alertConfigFile)
+		if err != nil {
+			Fatal(err)
+		}
+
+		scheduledRules = slices.Concat(scheduledRules, rule.ScheduledRulesFromConfig(*alertconfig, conn))
 	}
 
-	scheduledRules := rule.ScheduledRulesFromConfig(*alertconfig, conn)
+	if len(scheduledRules) == 0 {
+		Fatal(fmt.Errorf("no rules found"))
+	}
 
 	for {
 		for i, scheduledRule := range scheduledRules {
