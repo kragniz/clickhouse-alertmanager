@@ -12,12 +12,26 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
 	"github.com/kragniz/clickhouse-alertmanager/config"
 )
+
+type ScheduledRule struct {
+	LastRun   time.Time
+	Running   bool
+	Config    config.Rule
+	GroupName string
+	Labels    map[string]string
+}
+
+type ActiveAlert struct {
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+}
 
 func Fatal(err error) {
 	slog.Error("Fatal", "error", err)
@@ -143,29 +157,13 @@ func query(conn driver.Conn, query string) []map[string]string {
 	return labels
 }
 
-type Alert struct {
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
-}
-
-func alert(name string, labels []map[string]string, annotations map[string]string) {
+func alert(alerts []ActiveAlert) {
 	alertsEndpoint := "http://localhost:9093/api/v2/alerts"
-
-	alerts := []Alert{}
-
-	for _, l := range labels {
-		l["alertname"] = name
-		alerts = append(alerts, Alert{
-			Labels:      l,
-			Annotations: annotations,
-		})
-	}
 
 	request, err := json.Marshal(alerts)
 	if err != nil {
 		Fatal(err)
 	}
-	fmt.Println(string(request))
 
 	resp, err := http.Post(alertsEndpoint, "application/json", bytes.NewBuffer(request))
 	if err != nil {
@@ -179,6 +177,48 @@ func alert(name string, labels []map[string]string, annotations map[string]strin
 	slog.Info("Alert sent", "status", resp.Status, "body", string(body))
 }
 
+func ScheduledRulesFromConfig(c config.AlertConfig) []ScheduledRule {
+	rules := []ScheduledRule{}
+	for _, group := range c.Groups {
+		for _, rule := range group.Rules {
+			labels := maps.Clone(group.Labels)
+			maps.Copy(labels, rule.Labels)
+			rules = append(rules, ScheduledRule{
+				LastRun:   time.Time{},
+				Running:   false,
+				Config:    rule,
+				Labels:    labels,
+				GroupName: group.Name,
+			})
+		}
+	}
+	return rules
+}
+
+func AlertForSchedule(rule *ScheduledRule, conn driver.Conn) error {
+	alerts := []ActiveAlert{}
+
+	rule.Running = true
+
+	for _, queryLabels := range query(conn, rule.Config.Expr) {
+		labels := maps.Clone(rule.Labels)
+		maps.Copy(labels, queryLabels)
+		labels["alertname"] = rule.Config.AlertName
+
+		alerts = append(alerts, ActiveAlert{
+			Labels:      labels,
+			Annotations: rule.Config.Annotations,
+		})
+	}
+
+	alert(alerts)
+
+	rule.Running = false
+	rule.LastRun = time.Now()
+
+	return nil
+}
+
 func main() {
 	conn, err := connect()
 	if err != nil {
@@ -190,18 +230,25 @@ func main() {
 		panic((err))
 	}
 
-	for _, group := range config.Groups {
-		for _, rule := range group.Rules {
-			alertLabels := []map[string]string{}
+	scheduledRules := ScheduledRulesFromConfig(*config)
 
-			for _, queryLabels := range query(conn, rule.Expr) {
-				labels := maps.Clone(group.Labels)
-				maps.Copy(labels, rule.Labels)
-				maps.Copy(labels, queryLabels)
-				alertLabels = append(alertLabels, labels)
+	for {
+		for i, scheduledRule := range scheduledRules {
+			if !scheduledRule.Running {
+				if time.Since(scheduledRule.LastRun) > 5*time.Second {
+					slog.Info("Running rule",
+						"group", scheduledRule.GroupName,
+						"rule", scheduledRule.Config.AlertName,
+					)
+
+					err := AlertForSchedule(&scheduledRules[i], conn)
+					if err != nil {
+						slog.Error("AlertForConfig", "error", err)
+					}
+				}
 			}
-
-			alert(rule.AlertName, alertLabels, rule.Annotations)
 		}
+
+		time.Sleep(1 * time.Second)
 	}
 }
