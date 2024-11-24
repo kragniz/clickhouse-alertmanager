@@ -131,6 +131,8 @@ func main() {
 		Fatal(fmt.Errorf("no rules found"))
 	}
 
+	alertmanagers := alert.AlertmanagersFromConfig(*conf)
+
 	for {
 		for i, scheduledRule := range scheduledRules {
 			if !scheduledRule.Running {
@@ -150,7 +152,7 @@ func main() {
 					}
 
 					if len(alerts) > 0 {
-						alert.Send(alerts)
+						alertmanagers.Send(alerts)
 					}
 
 					if err != nil {

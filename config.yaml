@@ -6,6 +6,12 @@ clickhouse:
   username: demo
   password: ""
 
+alertmanager:
+  scheme: http
+  static_config:
+    targets:
+      - localhost:9093
+
 rule_files:
   - alerts.yaml
 
