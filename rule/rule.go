@@ -13,6 +13,7 @@ import (
 
 	"github.com/kragniz/clickhouse-alertmanager/alert"
 	"github.com/kragniz/clickhouse-alertmanager/config"
+	"github.com/kragniz/clickhouse-alertmanager/metrics"
 )
 
 type ScheduledRule struct {
@@ -44,17 +45,26 @@ func ScheduledRulesFromConfig(c config.AlertConfig, conn driver.Conn) []Schedule
 			})
 		}
 	}
+
+	metrics.RulesActive.Set(float64(len(rules)))
+
 	return rules
 }
 
 func (rule *ScheduledRule) Query() ([]map[string]string, error) {
 	ctx := context.Background()
+
+	start := time.Now()
+
 	rows, err := rule.conn.Query(ctx, rule.Config.Expr)
 	if err != nil {
 		return nil, err
 	}
 
 	defer rows.Close()
+
+	duration := time.Since(start).Seconds()
+	metrics.QueryDuration.Observe(duration)
 
 	var objects []map[string]any
 
@@ -133,6 +143,8 @@ func (rule *ScheduledRule) Run() ([]alert.ActiveAlert, error) {
 
 	rule.Running = false
 	rule.LastRun = time.Now()
+
+	metrics.RulesProcessed.WithLabelValues(rule.GroupName, rule.Config.AlertName).Inc()
 
 	return alerts, nil
 }

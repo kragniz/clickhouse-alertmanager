@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+
+	"github.com/kragniz/clickhouse-alertmanager/metrics"
 )
 
 type ActiveAlert struct {
@@ -31,5 +33,8 @@ func Send(alerts []ActiveAlert) error {
 		return err
 	}
 	slog.Info("Alert sent", "status", resp.Status, "body", string(body))
+
+	metrics.AlertsSent.Add(float64(len(alerts)))
+
 	return nil
 }

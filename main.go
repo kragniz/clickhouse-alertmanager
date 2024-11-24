@@ -15,6 +15,7 @@ import (
 
 	"github.com/kragniz/clickhouse-alertmanager/alert"
 	"github.com/kragniz/clickhouse-alertmanager/config"
+	"github.com/kragniz/clickhouse-alertmanager/metrics"
 	"github.com/kragniz/clickhouse-alertmanager/rule"
 )
 
@@ -102,13 +103,14 @@ func main() {
 			},
 		),
 	)
+	slog.SetDefault(logger)
 
 	conf, err := config.ReadConfig(*configFile)
 	if err != nil {
 		Fatal(err)
 	}
 
-	slog.SetDefault(logger)
+	go metrics.ListenAndServe()
 
 	conn, err := connect(conf.Clickhouse)
 	if err != nil {
