@@ -21,14 +21,19 @@ func Fatal(err error) {
 	os.Exit(1)
 }
 
-func connect() (driver.Conn, error) {
+func connect(conf config.Clickhouse) (driver.Conn, error) {
 	ctx := context.Background()
+
+	var tlsConf *tls.Config
+	if conf.TLS {
+		tlsConf = &tls.Config{}
+	}
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{"sql-clickhouse.clickhouse.com:9440"},
+		Addr: conf.Addresses,
 		Auth: clickhouse.Auth{
-			Database: "default",
-			Username: "demo",
-			Password: "",
+			Database: conf.Database,
+			Username: conf.Username,
+			Password: conf.Password,
 		},
 		ClientInfo: clickhouse.ClientInfo{
 			Products: []struct {
@@ -42,7 +47,7 @@ func connect() (driver.Conn, error) {
 			},
 		},
 
-		TLS: &tls.Config{},
+		TLS: tlsConf,
 
 		Debug: false,
 
@@ -69,6 +74,11 @@ func connect() (driver.Conn, error) {
 }
 
 func main() {
+	conf, err := config.ReadConfig("config.yaml")
+	if err != nil {
+		Fatal(err)
+	}
+
 	logger := slog.New(
 		slog.NewTextHandler(
 			os.Stdout,
@@ -80,17 +90,17 @@ func main() {
 
 	slog.SetDefault(logger)
 
-	conn, err := connect()
+	conn, err := connect(conf.Clickhouse)
 	if err != nil {
 		Fatal(err)
 	}
 
-	config, err := config.ReadAlertConfig("alerts.yaml")
+	alertconfig, err := config.ReadAlertConfig("alerts.yaml")
 	if err != nil {
 		Fatal(err)
 	}
 
-	scheduledRules := rule.ScheduledRulesFromConfig(*config, conn)
+	scheduledRules := rule.ScheduledRulesFromConfig(*alertconfig, conn)
 
 	for {
 		for i, scheduledRule := range scheduledRules {

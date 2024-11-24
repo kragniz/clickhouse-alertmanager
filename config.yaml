@@ -1,0 +1,7 @@
+clickhouse:
+  addresses:
+    - sql-clickhouse.clickhouse.com:9440
+  tls: true
+  database: default
+  username: demo
+  password: ""

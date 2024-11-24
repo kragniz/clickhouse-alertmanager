@@ -6,30 +6,25 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-type AlertConfig struct {
-	Groups []Group `yaml:"groups"`
+type Config struct {
+	Clickhouse Clickhouse `yaml:"clickhouse"`
 }
 
-type Group struct {
-	Name   string            `yaml:"name"`
-	Labels map[string]string `yaml:"labels"`
-	Rules  []Rule            `yaml:"rules"`
+type Clickhouse struct {
+	Addresses []string `yaml:"addresses"`
+	Database  string   `yaml:"database"`
+	Username  string   `yaml:"username"`
+	Password  string   `yaml:"password"`
+	TLS       bool     `yaml:"tls"`
 }
 
-type Rule struct {
-	AlertName   string            `yaml:"alert"`
-	Expr        string            `yaml:"expr"`
-	Labels      map[string]string `yaml:"labels"`
-	Annotations map[string]string `yaml:"annotations"`
-}
-
-func ReadAlertConfig(filename string) (*AlertConfig, error) {
+func ReadConfig(filename string) (*Config, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	var config AlertConfig
+	var config Config
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		return nil, err
