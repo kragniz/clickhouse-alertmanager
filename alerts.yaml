@@ -1,0 +1,20 @@
+groups:
+- name: example
+  labels:
+    team: myteam
+  rules:
+  - alert: BigPrice
+    expr: |
+      SELECT
+        postcode1 as postcode,
+        count() as count,
+        cast(round(avg(price)), 'int') AS price
+      FROM uk.uk_price_paid
+      WHERE (town = 'BRISTOL') AND (postcode1 != '') and date >= '2021-01-01'
+      GROUP BY postcode1
+      ORDER BY price DESC
+      LIMIT 3
+    labels:
+      severity: page
+    annotations:
+      summary: High house price
