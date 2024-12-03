@@ -5,6 +5,7 @@ go 1.22.5
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.30.0
 	github.com/goccy/go-yaml v1.14.3
+	github.com/prometheus/client_golang v1.20.5
 )
 
 require (
@@ -20,7 +21,6 @@ require (
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.20.5 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

@@ -1,12 +1,14 @@
 package rule
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"maps"
 	"reflect"
 	"regexp"
+	"text/template"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -24,6 +26,10 @@ type ScheduledRule struct {
 	Labels    map[string]string
 
 	conn driver.Conn
+}
+
+type AlertValues struct {
+	Labels map[string]string
 }
 
 var nonPrometheusLabelRegex = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
@@ -135,9 +141,30 @@ func (rule *ScheduledRule) Run() ([]alert.ActiveAlert, error) {
 		maps.Copy(labels, queryLabels)
 		labels["alertname"] = rule.Config.AlertName
 
+		annotations := map[string]string{}
+
+		for k, v := range rule.Config.Annotations {
+			tmpl, err := template.New("annotation").Parse(v)
+			if err != nil {
+				slog.Error("Error templating annotation", "name", k, "error", err)
+				annotations[k] = v
+				continue
+			}
+
+			var buf bytes.Buffer
+			err = tmpl.Execute(&buf, AlertValues{Labels: labels})
+			if err != nil {
+				slog.Error("Error templating annotation", "name", k, "error", err)
+				annotations[k] = v
+				continue
+			}
+
+			annotations[k] = buf.String()
+		}
+
 		alerts = append(alerts, alert.ActiveAlert{
 			Labels:      labels,
-			Annotations: rule.Config.Annotations,
+			Annotations: annotations,
 		})
 	}
 

@@ -17,4 +17,5 @@ groups:
     labels:
       severity: page
     annotations:
-      summary: High house price
+      summary: High house price in {{ .Labels.postcode }}
+      description: The average price of houses in {{ .Labels.postcode }} was £{{ .Labels.price }}
